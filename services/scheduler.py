@@ -3,7 +3,7 @@ from typing import List
 from datetime import datetime
 import config
 import logging
-import os
+import json
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -13,17 +13,16 @@ class TweetScheduler:
     def __init__(self):
         self.api_key = config.TYPEFULLY_API_KEY
         if not self.api_key:
-            logger.error("No Typefully API key found in environment variables!")
             raise ValueError("TYPEFULLY_API_KEY is not set in environment variables")
             
-        self.base_url = "https://api.typefully.com/v1"
+        self.base_url = "https://api.typefully.com"
         self.headers = {
             "X-API-KEY": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "Python/3.10"
         }
-        logger.info(f"TweetScheduler initialized with API key: {self.api_key[:5]}...")
-        logger.debug(f"Full headers: {self.headers}")
-        logger.debug(f"Current environment: {dict(os.environ)}")
+        logger.info("TweetScheduler initialized successfully")
 
     def schedule_thread(self, tweets: List[str], deadline: str) -> str:
         """
@@ -31,56 +30,52 @@ class TweetScheduler:
         
         Args:
             tweets: List of tweets to schedule
-            deadline: Deadline in human-readable format
+            deadline: Deadline in ISO format
         
         Returns:
-            Typefully draft URL
+            Typefully share URL
         """
-        # Convert deadline to ISO format
         schedule_time = datetime.fromisoformat(deadline)
-        logger.info(f"Scheduling thread for: {schedule_time.isoformat()}")
-        logger.info(f"Number of tweets to schedule: {len(tweets)}")
-        logger.debug(f"Tweet content: {tweets}")
-
-        # Prepare request data
+        content = "\n\n\n\n".join(tweets)
+        
         request_data = {
-            "content": "\n\n\n\n".join(tweets),  # 4 newlines as per docs
+            "content": content,
             "schedule-date": schedule_time.isoformat(),
             "threadify": True,
             "share": True
         }
-        logger.info("Prepared request data")
-        logger.debug(f"Request data: {request_data}")
-        logger.debug(f"Using headers: {self.headers}")
 
         try:
-            endpoint = f"{self.base_url}/drafts"  # Removed trailing slash
-            logger.info(f"Making POST request to {endpoint}")
-            response = requests.post(
-                endpoint,
+            endpoint = f"{self.base_url}/v1/drafts/"
+            response = requests.request(
+                method='POST',
+                url=endpoint,
                 headers=self.headers,
-                json=request_data
+                json=request_data,
+                allow_redirects=True
             )
             
-            logger.info(f"Response status code: {response.status_code}")
-            logger.debug(f"Response content: {response.text}")
+            if response.status_code != 200:
+                logger.error(f"API error: {response.status_code} - {response.text}")
+                raise Exception(f"API returned status code {response.status_code}")
             
-            response.raise_for_status()
+            if not response.text:
+                raise Exception("Empty response from Typefully API")
+            
             draft_data = response.json()
-            
             share_url = draft_data.get('share_url')
             if not share_url:
-                logger.warning("No share_url in response, falling back to draft URL")
                 share_url = f"https://typefully.com/draft/{draft_data['id']}"
             
-            logger.info(f"Draft created successfully with URL: {share_url}")
+            logger.info(f"Thread scheduled successfully: {share_url}")
             return share_url
             
         except requests.exceptions.RequestException as e:
-            logger.error(f"Error scheduling tweets: {str(e)}")
-            logger.error(f"Response content: {getattr(e.response, 'text', 'No response content')}")
-            logger.error(f"Request headers used: {self.headers}")
-            raise Exception(f"Failed to schedule tweets: {str(e)}")
+            logger.error(f"Request failed: {str(e)}")
+            raise Exception("Failed to schedule tweets") from e
+        except json.JSONDecodeError as je:
+            logger.error(f"Invalid API response: {str(je)}")
+            raise Exception("Invalid response from API") from je
         except Exception as e:
             logger.error(f"Unexpected error: {str(e)}")
             raise
