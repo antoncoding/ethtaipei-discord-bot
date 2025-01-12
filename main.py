@@ -96,14 +96,13 @@ client = TweetBot()
 
 @client.tree.command(
     name="create",
-    description="Create and schedule a tweet thread"
+    description="Create a tweet thread draft"
 )
 @app_commands.describe(
     main="TLDR of what to introduce (partnership, sponsorship, etc.)",
     context="Special requirements, information dump, or partner intro",
     keywords="Key words that must be mentioned (comma-separated)",
-    tag="X accounts to be mentioned (comma-separated)",
-    deadline="Latest time to post (e.g., 2025-01-13T10:00:00+08:00)",
+    tag="Optional: X accounts to be mentioned (comma-separated)",
     length="Approximate number of tweets in thread"
 )
 @check_channel()
@@ -112,13 +111,12 @@ async def create(
     main: str,
     context: str,
     keywords: str,
-    tag: str,
-    deadline: str,
-    length: int
+    length: int,
+    tag: Optional[str] = None
 ):
     await interaction.response.defer()
     logger.info(f"Received /create command from {interaction.user} (ID: {interaction.user.id})")
-    logger.info(f"Parameters: main='{main}', keywords='{keywords}', length={length}")
+    logger.info(f"Parameters: main='{main}', keywords='{keywords}', length={length}, tag={tag}")
 
     try:
         # Prepare request data
@@ -126,8 +124,7 @@ async def create(
             'main': main,
             'context': context,
             'keywords': [k.strip() for k in keywords.split(',')],
-            'tag': [t.strip() for t in tag.split(',')],
-            'deadline': deadline,
+            'tag': [t.strip() for t in tag.split(',')] if tag else [],
             'length': length
         }
         
@@ -135,20 +132,20 @@ async def create(
         tweets = client.tweet_generator.generate_thread(request)
         logger.info(f"Generated {len(tweets)} tweets successfully")
 
-        # Schedule tweets
-        logger.info("Scheduling tweets on Typefully...")
-        typefully_url = client.scheduler.schedule_thread(tweets, deadline)
-        logger.info(f"Tweets scheduled successfully: {typefully_url}")
+        # Create draft on Typefully
+        logger.info("Creating draft on Typefully...")
+        typefully_url = client.scheduler.schedule_thread(tweets)
+        logger.info(f"Draft created successfully: {typefully_url}")
 
         # Create response embed
         embed = discord.Embed(
-            title="Tweet Thread Scheduled!",
-            description="Your tweet thread has been generated and scheduled.",
+            title="Tweet Thread Draft Created!",
+            description="Your tweet thread has been generated and saved as a draft.",
             color=discord.Color.green()
         )
         embed.add_field(name="Number of Tweets", value=str(len(tweets)), inline=True)
-        embed.add_field(name="Scheduled For", value=deadline, inline=True)
         embed.add_field(name="View on Typefully", value=typefully_url, inline=False)
+        embed.set_footer(text="You can edit and schedule this draft on Typefully")
 
         await interaction.followup.send(embed=embed)
         

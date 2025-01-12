@@ -36,7 +36,6 @@ Use the `/create` command with the following parameters:
 - `context`: Additional context/requirements
 - `keywords`: Must-mention keywords (comma-separated)
 - `tag`: X accounts to mention (comma-separated)
-- `deadline`: When to post (e.g., "2024-01-15T14:30:00+08:00")
 - `length`: Approximate number of tweets in thread
 
 ## Deployment

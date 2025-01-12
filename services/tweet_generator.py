@@ -22,7 +22,6 @@ class TweetGenerator:
                 - context: Additional context
                 - keywords: Must-mention keywords
                 - tag: X accounts to mention
-                - deadline: Posting deadline
                 - length: Approximate thread length
         
         Returns:
@@ -65,7 +64,6 @@ Context: {request['context']}
 Required Keywords: {', '.join(request['keywords'])}
 Accounts to Tag: {', '.join(request['tag'])}
 Approximate Thread Length: {request['length']} tweets
-Deadline: {request['deadline']}
 
 Format the response as a list of tweets, with each tweet starting with a number and staying within 280 characters.
 Make sure to include all required keywords and tags."""

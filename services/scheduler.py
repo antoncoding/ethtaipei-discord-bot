@@ -1,81 +1,67 @@
 import requests
-from typing import List
-from datetime import datetime
-import config
 import logging
-import json
+import config
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class TweetScheduler:
     def __init__(self):
-        self.api_key = config.TYPEFULLY_API_KEY
-        if not self.api_key:
-            raise ValueError("TYPEFULLY_API_KEY is not set in environment variables")
-            
-        self.base_url = "https://api.typefully.com"
+        self.base_url = "https://api.typefully.com/v1/drafts/"  # Updated endpoint
         self.headers = {
-            "X-API-KEY": f"Bearer {self.api_key}",
+            "X-API-KEY": f"Bearer {config.TYPEFULLY_API_KEY}",  # Updated header
             "Content-Type": "application/json",
             "Accept": "application/json",
             "User-Agent": "Python/3.10"
         }
-        logger.info("TweetScheduler initialized successfully")
 
-    def schedule_thread(self, tweets: List[str], deadline: str) -> str:
+    def schedule_thread(self, tweets):
         """
-        Schedule a thread of tweets using Typefully API
+        Create a draft thread on Typefully.
         
         Args:
-            tweets: List of tweets to schedule
-            deadline: Deadline in ISO format
-        
+            tweets (list): List of tweet texts to be posted
+            
         Returns:
-            Typefully share URL
+            str: URL to the draft on Typefully
         """
-        schedule_time = datetime.fromisoformat(deadline)
-        content = "\n\n\n\n".join(tweets)
-        
-        request_data = {
-            "content": content,
-            "schedule-date": schedule_time.isoformat(),
-            "threadify": True,
-            "share": True
-        }
-
         try:
-            endpoint = f"{self.base_url}/v1/drafts/"
+            # Prepare the request body
+            body = {
+                "content": "\n\n\n\n".join(tweets),  # Use 4 newlines as in test
+                "threadify": True,
+                "share": True
+            }
+            
             response = requests.request(
                 method='POST',
-                url=endpoint,
+                url=self.base_url,
                 headers=self.headers,
-                json=request_data,
+                json=body,
                 allow_redirects=True
             )
+            response.raise_for_status()
             
-            if response.status_code != 200:
-                logger.error(f"API error: {response.status_code} - {response.text}")
-                raise Exception(f"API returned status code {response.status_code}")
+            data = response.json()
+            if not data:
+                raise ValueError("Empty response from Typefully API")
             
-            if not response.text:
-                raise Exception("Empty response from Typefully API")
+            # Get share URL or construct it from draft ID
+            share_url = data.get('share_url')
+            if not share_url and 'id' in data:
+                share_url = f"https://typefully.com/draft/{data['id']}"
             
-            draft_data = response.json()
-            share_url = draft_data.get('share_url')
             if not share_url:
-                share_url = f"https://typefully.com/draft/{draft_data['id']}"
-            
-            logger.info(f"Thread scheduled successfully: {share_url}")
+                raise ValueError("No URL in Typefully response")
+                
+            logger.info(f"Draft thread created successfully on Typefully")
             return share_url
             
         except requests.exceptions.RequestException as e:
-            logger.error(f"Request failed: {str(e)}")
-            raise Exception("Failed to schedule tweets") from e
-        except json.JSONDecodeError as je:
-            logger.error(f"Invalid API response: {str(je)}")
-            raise Exception("Invalid response from API") from je
+            logger.error(f"Error creating draft on Typefully: {str(e)}")
+            raise Exception(f"Failed to create draft: {str(e)}")
+        except ValueError as e:
+            logger.error(f"Invalid response from Typefully: {str(e)}")
+            raise
         except Exception as e:
-            logger.error(f"Unexpected error: {str(e)}")
+            logger.error(f"Unexpected error in schedule_thread: {str(e)}")
             raise
