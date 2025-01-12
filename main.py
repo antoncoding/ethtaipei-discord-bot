@@ -5,6 +5,7 @@ import config
 from services.tweet_generator import TweetGenerator
 from services.scheduler import TweetScheduler
 import logging
+from functools import wraps
 
 # Configure logging
 logging.basicConfig(
@@ -17,9 +18,30 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+def check_channel():
+    """Decorator to check if command is used in the allowed channels"""
+    async def predicate(interaction: discord.Interaction) -> bool:
+        if not config.ALLOWED_CHANNELS:
+            # If no channels are set, allow the command everywhere
+            return True
+            
+        if interaction.channel_id not in config.ALLOWED_CHANNELS:
+            # Format the channel mentions
+            allowed_channels = ', '.join(f'<#{channel_id}>' for channel_id in config.ALLOWED_CHANNELS)
+            logger.info(
+                f"Command attempted in unauthorized channel {interaction.channel_id} "
+                f"by user {interaction.user} (ID: {interaction.user.id})"
+            )
+            await interaction.response.send_message(
+                f"This command can only be used in the following channels: {allowed_channels}",
+                ephemeral=True
+            )
+            return False
+        return True
+    return app_commands.check(predicate)
+
 class TweetBot(discord.Client):
     def __init__(self):
-        # Initialize with necessary intents
         intents = discord.Intents.default()
         intents.message_content = True
         super().__init__(intents=intents)
@@ -27,26 +49,48 @@ class TweetBot(discord.Client):
         self.tree = app_commands.CommandTree(self)
         self.tweet_generator = TweetGenerator()
         self.scheduler = TweetScheduler()
+        
+        # Set up error handler for the command tree
+        self.tree.on_error = self.on_tree_error
         logger.info("TweetBot initialized")
 
     async def setup_hook(self):
-        # This is called when the bot starts
         logger.info("Registering commands...")
-        # If you have a specific guild/server, use this line (replace YOUR_GUILD_ID):
         if hasattr(config, 'DISCORD_GUILD_ID'):
             guild = discord.Object(id=int(config.DISCORD_GUILD_ID))
             self.tree.copy_global_to(guild=guild)
             await self.tree.sync(guild=guild)
             logger.info(f"Commands registered for guild ID: {config.DISCORD_GUILD_ID}")
         else:
-            # This will sync commands globally
             await self.tree.sync()
             logger.info("Commands registered globally")
-        logger.info("Command registration complete!")
 
     async def on_ready(self):
         logger.info(f'Logged in as {self.user} (ID: {self.user.id})')
+        if config.ALLOWED_CHANNELS:
+            logger.info(f'Commands restricted to channels: {config.ALLOWED_CHANNELS}')
         logger.info('------')
+
+    async def on_tree_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        """Handle command errors gracefully"""
+        if isinstance(error, app_commands.errors.CheckFailure):
+            # This error is already handled in the check_channel decorator
+            logger.info(
+                f"CheckFailure handled: User {interaction.user} "
+                f"attempted to use command in channel {interaction.channel_id}"
+            )
+            return
+            
+        # Handle other errors
+        logger.error(f"Command error: {str(error)}", exc_info=True)
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "An error occurred while processing your command.",
+                    ephemeral=True
+                )
+        except Exception as e:
+            logger.error(f"Error sending error message: {str(e)}")
 
 client = TweetBot()
 
@@ -62,6 +106,7 @@ client = TweetBot()
     deadline="Latest time to post (e.g., 2025-01-13T10:00:00+08:00)",
     length="Approximate number of tweets in thread"
 )
+@check_channel()
 async def create(
     interaction: discord.Interaction,
     main: str,
@@ -98,29 +143,25 @@ async def create(
         # Create response embed
         embed = discord.Embed(
             title="Tweet Thread Scheduled!",
+            description="Your tweet thread has been generated and scheduled.",
             color=discord.Color.green()
         )
-        embed.add_field(name="Main Topic", value=main, inline=False)
-        embed.add_field(name="Deadline", value=deadline, inline=True)
-        embed.add_field(name="Thread Length", value=str(len(tweets)), inline=True)
-        embed.add_field(name="Preview Link", value=typefully_url, inline=False)
-
-        # Add preview of first tweet
-        if tweets:
-            embed.add_field(name="First Tweet Preview", value=tweets[0], inline=False)
+        embed.add_field(name="Number of Tweets", value=str(len(tweets)), inline=True)
+        embed.add_field(name="Scheduled For", value=deadline, inline=True)
+        embed.add_field(name="View on Typefully", value=typefully_url, inline=False)
 
         await interaction.followup.send(embed=embed)
-        logger.info("Response sent to user")
-
+        
     except Exception as e:
-        logger.error(f"Error processing /create command: {str(e)}", exc_info=True)
-        await interaction.followup.send(
-            f"Error occurred: {str(e)}",
-            ephemeral=True
+        logger.error(f"Error processing /create command: {str(e)}")
+        error_embed = discord.Embed(
+            title="Error",
+            description=f"Failed to create tweet thread: {str(e)}",
+            color=discord.Color.red()
         )
+        await interaction.followup.send(embed=error_embed)
 
 def main():
-    logger.info("Bot is starting...")
     client.run(config.DISCORD_TOKEN)
 
 if __name__ == "__main__":
