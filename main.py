@@ -28,8 +28,13 @@ def check_channel():
 
 class TweetBot(discord.Client):
     def __init__(self):
+        # Set up all required intents
         intents = discord.Intents.default()
         intents.message_content = True
+        intents.messages = True
+        intents.guild_messages = True
+        intents.message_content = True
+        intents.guilds = True
         super().__init__(intents=intents)
         
         self.tree = app_commands.CommandTree(self)
@@ -59,7 +64,7 @@ class TweetBot(discord.Client):
 
     async def on_tree_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
         """Handle command errors gracefully"""
-        logger.error(f"Command error: {str(error)}", exc_info=True)
+        logger.error(f"Error in {interaction.command.name} command: {str(error)}", exc_info=True)
         
         if isinstance(error, app_commands.errors.CheckFailure):
             # This is handled by the check_channel decorator
@@ -70,7 +75,17 @@ class TweetBot(discord.Client):
             description="An unexpected error occurred while processing your command. Please try again later.",
             color=discord.Color.red()
         )
-        await interaction.followup.send(embed=error_embed)
+        
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(embed=error_embed, ephemeral=True)
+            else:
+                await interaction.followup.send(embed=error_embed, ephemeral=True)
+        except discord.errors.NotFound:
+            # If interaction is no longer valid, log it but don't try to respond
+            logger.warning("Could not respond to interaction - interaction token may have expired")
+        except Exception as e:
+            logger.error(f"Error while sending error message: {str(e)}", exc_info=True)
 
 client = TweetBot()
 
@@ -83,8 +98,15 @@ client = TweetBot()
     context="Special requirements, information dump, or partner intro",
     keywords="Key words that must be mentioned (comma-separated)",
     tag="Optional: X accounts to be mentioned (comma-separated)",
-    length="Approximate number of tweets in thread"
+    length="Approximate number of tweets in thread (1-10)",
+    tone="Optional: Tone of the tweets (default: normal)",
+    link="Optional: Link to attach to the last tweet"
 )
+@app_commands.choices(tone=[
+    app_commands.Choice(name="Intern Style", value="intern"),
+    app_commands.Choice(name="Normal", value="normal"),
+    app_commands.Choice(name="Marketing", value="marketing"),
+])
 @check_channel()
 async def draft(
     interaction: discord.Interaction,
@@ -92,21 +114,44 @@ async def draft(
     context: str,
     keywords: str,
     length: int,
-    tag: Optional[str] = None
+    tag: Optional[str] = None,
+    tone: Optional[str] = "normal",
+    link: Optional[str] = None
 ):
-    await interaction.response.defer()
-    logger.info(f"Received /draft command from {interaction.user} (ID: {interaction.user.id})")
-    logger.info(f"Parameters: main='{main}', keywords='{keywords}', length={length}, tag={tag}")
-
     try:
+        # Validate inputs before deferring
+        if not main or not context or not keywords:
+            await interaction.response.send_message(
+                "❌ Please provide all required fields: main topic, context, and keywords.",
+                ephemeral=True
+            )
+            return
+
+        if length < 1 or length > 10:
+            await interaction.response.send_message(
+                "❌ Thread length must be between 1 and 10 tweets.",
+                ephemeral=True
+            )
+            return
+
+        # Now that inputs are validated, defer the response
+        await interaction.response.defer(thinking=True)
+        
+        logger.info(f"Received /draft command from {interaction.user} (ID: {interaction.user.id})")
+        logger.info(f"Parameters: main='{main}', keywords='{keywords}', length={length}, tag={tag}, tone={tone}, link={link}")
+
         # Generate initial thread
         request = {
             "main": main,
             "context": context,
             "keywords": keywords,
             "tag": tag,
-            "length": length
+            "length": length,
+            "tone": tone,
+            "link": link
         }
+        
+        # Generate the tweets
         tweets = client.tweet_generator.generate_thread(request)
         
         # Create the preview message with buttons
@@ -127,15 +172,27 @@ async def draft(
         # Create buttons
         view = TweetPreviewView(tweets, request, interaction.user.id, client.tweet_generator, client.scheduler)
         
-        # Send the preview message
-        await interaction.followup.send(embed=preview, view=view)
+        # Edit the original response with the preview
+        await interaction.edit_original_response(embed=preview, view=view)
         
     except Exception as e:
         logger.error(f"Error in /draft command: {str(e)}", exc_info=True)
-        await interaction.followup.send(
-            "Sorry, something went wrong while creating your tweet thread. Please try again.",
-            ephemeral=True
-        )
+        error_msg = "Sorry, something went wrong while creating your tweet thread. Please try again."
+        
+        try:
+            # If we haven't responded yet, send an ephemeral message
+            if not interaction.response.is_done():
+                await interaction.response.send_message(error_msg, ephemeral=True)
+            else:
+                # If we've already responded, use followup
+                await interaction.followup.send(error_msg, ephemeral=True)
+        except:
+            # Last resort: try to send a message to the channel
+            if interaction.channel:
+                await interaction.channel.send(
+                    f"{interaction.user.mention} {error_msg}",
+                    delete_after=10
+                )
 
 class TweetPreviewView(discord.ui.View):
     def __init__(self, tweets, request, user_id, tweet_generator, scheduler):
@@ -195,9 +252,10 @@ class TweetFeedbackModal(discord.ui.Modal, title="Tweet Thread Feedback"):
         self.tweet_generator = tweet_generator
         
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer()
-        
         try:
+            # Acknowledge the interaction first and show loading state
+            await interaction.response.defer(thinking=True)
+            
             # Add feedback to the context and regenerate
             new_context = f"{self.request['context']}\n\nFeedback: {self.feedback.value}"
             self.request['context'] = new_context
@@ -205,7 +263,7 @@ class TweetFeedbackModal(discord.ui.Modal, title="Tweet Thread Feedback"):
             # Generate new thread
             new_tweets = self.tweet_generator.generate_thread(self.request)
             
-            # Create a completely new embed instead of modifying the old one
+            # Create a completely new embed
             new_preview = discord.Embed(
                 title="Updated Tweet Thread Preview",
                 description="Thread has been updated based on your feedback. Use the buttons below to provide more feedback or finalize.",
@@ -220,17 +278,12 @@ class TweetFeedbackModal(discord.ui.Modal, title="Tweet Thread Feedback"):
                     inline=False
                 )
             
-            # Create new view with updated tweets
-            new_view = TweetPreviewView(
-                new_tweets, 
-                self.request, 
-                interaction.user.id,
-                self.tweet_generator,
-                interaction.client.scheduler
-            )
+            # Create new view with fresh buttons
+            new_view = TweetPreviewView(new_tweets, self.request, interaction.user.id, self.tweet_generator, client.scheduler)
             
-            # Replace the entire message with the new embed
-            await interaction.message.edit(embed=new_preview, view=new_view)
+            # Use interaction.followup.edit_message to edit the original message
+            original_message = await interaction.original_response()
+            await interaction.followup.edit_message(message_id=original_message.id, embed=new_preview, view=new_view)
             
         except Exception as e:
             logger.error(f"Error processing feedback: {str(e)}", exc_info=True)

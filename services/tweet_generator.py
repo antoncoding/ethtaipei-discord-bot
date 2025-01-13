@@ -1,7 +1,8 @@
 from openai import OpenAI
-from typing import List, Dict
+from typing import List, Dict, Optional
 import config
 import logging
+from .tone_settings import get_system_prompt, ToneType
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -23,6 +24,8 @@ class TweetGenerator:
                 - keywords: Must-mention keywords
                 - tag: X accounts to mention
                 - length: Approximate thread length
+                - tone: Optional tone (intern/normal/marketing)
+                - link: Optional link to include in thread
         
         Returns:
             List of tweets for the thread
@@ -38,7 +41,7 @@ class TweetGenerator:
             response = self.client.chat.completions.create(
                 model="gpt-4",
                 messages=[
-                    {"role": "system", "content": "You are a social media manager crafting engaging X (Twitter) threads for an event: ETHTaipei2025, which is the most eth and dev focused event in Taiwan, especially around Ethereum protocol, smart contract devs, defi and zk tech. Don't use too much emojis or hashtags"},
+                    {"role": "system", "content": get_system_prompt(request.get('tone', 'normal'))},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.7
@@ -67,17 +70,28 @@ class TweetGenerator:
         # Process keywords
         keyword_list = [k.strip() for k in request['keywords'].split(',') if k.strip()]
 
-        prompt = f"""Create a Twitter thread with the following requirements:
+        # Build the prompt
+        prompt_parts = [
+            f"Create a Twitter thread with the following requirements:",
+            f"\nMain Topic: {request['main']}",
+            f"Context: {request['context']}",
+            f"Required Keywords: {', '.join(keyword_list)}"
+        ]
 
-Main Topic: {request['main']}
-Context: {request['context']}
-Required Keywords: {', '.join(keyword_list)}
-{f"Accounts to Tag: {', '.join(tag_list)}" if tag_list else ""}
-Approximate Thread Length: {request['length']} tweets
+        if tag_list:
+            prompt_parts.append(f"Accounts to Tag: {', '.join(tag_list)}")
+            
+        if request.get('link'):
+            prompt_parts.append(f"Important Link to Include: {request['link']}")
+            prompt_parts.append("Note: Incorporate this link naturally into the most relevant tweet in the thread.")
 
-Format the response as a list of tweets, with each tweet starting with a number and staying within 280 characters.
-Make sure to include all required keywords and tags."""
-        
+        prompt_parts.extend([
+            f"Approximate Thread Length: {request['length']} tweets",
+            "\nFormat the response as a list of tweets, with each tweet starting with a number and staying within 280 characters.",
+            "Make sure to include all required keywords and tags."
+        ])
+
+        prompt = "\n".join(prompt_parts)
         logger.debug(f"Created prompt: {prompt}")
         return prompt
 

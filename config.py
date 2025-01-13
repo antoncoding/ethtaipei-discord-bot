@@ -9,7 +9,6 @@ load_dotenv()
 
 # Discord Configuration
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
-DISCORD_GUILD_ID = os.getenv('DISCORD_GUILD_ID')
 
 # Get allowed channels as a list
 DISCORD_CHANNEL_IDS = os.getenv('DISCORD_CHANNEL_IDS', '').strip()
@@ -27,7 +26,7 @@ COMMAND_PREFIX = '/'
 # Log loaded configuration (without sensitive values)
 logger.info("Configuration loaded:")
 logger.info(f"DISCORD_TOKEN: {'Set' if DISCORD_TOKEN else 'Not set'}")
-logger.info(f"DISCORD_GUILD_ID: {DISCORD_GUILD_ID if DISCORD_GUILD_ID else 'Not set'}")
+
 logger.info(f"ALLOWED_CHANNELS: {ALLOWED_CHANNELS if ALLOWED_CHANNELS else 'Not set (all channels allowed)'}")
 logger.info(f"OPENAI_API_KEY: {'Set' if OPENAI_API_KEY else 'Not set'}")
 logger.info(f"TYPEFULLY_API_KEY: {'Set' if TYPEFULLY_API_KEY else 'Not set'}")
