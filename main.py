@@ -256,17 +256,32 @@ class TweetFeedbackModal(discord.ui.Modal, title="Tweet Thread Feedback"):
             # Acknowledge the interaction first and show loading state
             await interaction.response.defer(thinking=True)
             
-            # Add feedback to the context and regenerate
-            new_context = f"{self.request['context']}\n\nFeedback: {self.feedback.value}"
-            self.request['context'] = new_context
+            # Format the original tweets for context
+            original_tweets = "\n".join([f"Tweet {i+1}: {tweet}" for i, tweet in enumerate(self.tweets)])
             
-            # Generate new thread
+            # Add feedback and original tweets to the context
+            feedback_context = (
+                f"Original thread:\n{original_tweets}\n\n"
+                f"User feedback: {self.feedback.value}\n\n"
+                f"Please improve the thread based on this feedback while maintaining the original message and style."
+            )
+            
+            # Update request with combined context
+            self.request['context'] = f"{self.request['context']}\n\n{feedback_context}"
+            
+            # Log the feedback and context for debugging
+            logger.info(f"Received feedback from user {interaction.user} (ID: {interaction.user.id})")
+            logger.info(f"Feedback: {self.feedback.value}")
+            logger.info(f"Original tweets: {original_tweets}")
+            logger.info(f"Updated context: {self.request['context']}")
+            
+            # Generate new thread with the updated context
             new_tweets = self.tweet_generator.generate_thread(self.request)
             
             # Create a completely new embed
             new_preview = discord.Embed(
                 title="Updated Tweet Thread Preview",
-                description="Thread has been updated based on your feedback. Use the buttons below to provide more feedback or finalize.",
+                description=f"Thread has been updated based on your feedback:\n> {self.feedback.value}",
                 color=discord.Color.green()
             )
             
