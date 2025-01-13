@@ -57,12 +57,22 @@ class TweetGenerator:
             raise
     
     def _create_prompt(self, request: Dict) -> str:
+        # Process tags: split if string, convert to list if None
+        tags = request.get('tag')
+        if tags is None:
+            tag_list = []
+        else:
+            tag_list = [t.strip() for t in tags.split(',') if t.strip()]
+
+        # Process keywords
+        keyword_list = [k.strip() for k in request['keywords'].split(',') if k.strip()]
+
         prompt = f"""Create a Twitter thread with the following requirements:
 
 Main Topic: {request['main']}
 Context: {request['context']}
-Required Keywords: {', '.join(request['keywords'])}
-Accounts to Tag: {', '.join(request['tag'])}
+Required Keywords: {', '.join(keyword_list)}
+{f"Accounts to Tag: {', '.join(tag_list)}" if tag_list else ""}
 Approximate Thread Length: {request['length']} tweets
 
 Format the response as a list of tweets, with each tweet starting with a number and staying within 280 characters.
@@ -72,8 +82,20 @@ Make sure to include all required keywords and tags."""
         return prompt
 
     def _parse_response(self, response: str) -> List[str]:
-        # Split response into individual tweets and clean them
+        # Split response into individual tweets
         tweets = [tweet.strip() for tweet in response.split('\n') if tweet.strip()]
-        # Remove numbering if present and clean up
-        tweets = [tweet[tweet.find(' ')+1:] if tweet[0].isdigit() else tweet for tweet in tweets]
-        return tweets
+        
+        # Process each tweet
+        cleaned_tweets = []
+        for tweet in tweets:
+            # Remove numbering if present
+            if tweet[0].isdigit():
+                tweet = tweet[tweet.find(' ')+1:].strip()
+            
+            # Remove any surrounding quotes
+            tweet = tweet.strip('"').strip("'").strip()
+            
+            if tweet:  # Only add non-empty tweets
+                cleaned_tweets.append(tweet)
+                
+        return cleaned_tweets
