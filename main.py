@@ -7,6 +7,7 @@ from services.tweet_generator import TweetGenerator
 from services.scheduler import TweetScheduler
 from aiohttp import web
 import asyncio
+import os
 
 # Configure logging
 logging.basicConfig(
@@ -101,9 +102,10 @@ class TweetBot(discord.Client):
         """Start the web server"""
         runner = web.AppRunner(self.web_app)
         await runner.setup()
-        site = web.TCPSite(runner, '0.0.0.0', 8000)
+        port = int(os.getenv("PORT", "8000"))
+        site = web.TCPSite(runner, '0.0.0.0', port)
         await site.start()
-        logger.info("Health check endpoint started on port 8000")
+        logger.info(f"Health check endpoint started on port {port}")
 
 def main():
     # Create the client
