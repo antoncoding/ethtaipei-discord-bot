@@ -13,8 +13,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application code
 COPY . .
 
-# Expose the port your app runs on (if needed)
-# EXPOSE 8000
+# Expose the healthcheck port
+EXPOSE 8000
 
 # Command to run the application
 CMD ["python", "main.py"]
