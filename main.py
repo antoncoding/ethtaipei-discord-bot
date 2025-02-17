@@ -48,7 +48,7 @@ class TweetBot(discord.Client):
         
         # Add web app
         self.web_app = web.Application()
-        self.web_app.router.add_get('/healthcheck', self.handle_healthcheck)
+        self.web_app.router.add_get('/', self.handle_healthcheck)
         logger.info("TweetBot initialized")
 
     async def setup_hook(self):
