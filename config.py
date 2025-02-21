@@ -23,6 +23,9 @@ TYPEFULLY_API_KEY = os.getenv('TYPEFULLY_API_KEY')
 # Bot Configuration
 COMMAND_PREFIX = '/'
 
+# List of user IDs that can use admin commands
+ADMIN_IDS = ['your_discord_user_id']  # Replace with your Discord user ID
+
 # Log loaded configuration (without sensitive values)
 logger.info("Configuration loaded:")
 logger.info(f"DISCORD_TOKEN: {'Set' if DISCORD_TOKEN else 'Not set'}")

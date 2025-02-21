@@ -22,7 +22,7 @@ class TweetGenerator:
                 - main: Main topic/TLDR
                 - context: Additional context
                 - keywords: Must-mention keywords
-                - tag: X accounts to mention
+                - tags: X accounts to mention
                 - length: Approximate thread length
                 - tone: Optional tone (intern/normal/marketing)
                 - link: Optional link to include in thread
@@ -61,25 +61,21 @@ class TweetGenerator:
     
     def _create_prompt(self, request: Dict) -> str:
         # Process tags: split if string, convert to list if None
-        tags = request.get('tag')
-        if tags is None:
-            tag_list = []
-        else:
-            tag_list = [t.strip() for t in tags.split(',') if t.strip()]
-
-        # Process keywords
-        keyword_list = [k.strip() for k in request['keywords'].split(',') if k.strip()]
-
+        tags = request.get('tags')
+        
+        # Similar to tags, but for keywords
+        keywords = request.get('keywords')
+        
         # Build the prompt
         prompt_parts = [
             f"Create a Twitter thread with the following requirements:",
             f"\nMain Topic: {request['main']}",
             f"Context: {request['context']}",
-            f"Required Keywords: {', '.join(keyword_list)}"
+            f"Required Keywords: {', '.join(keywords)}"
         ]
 
-        if tag_list:
-            prompt_parts.append(f"Accounts to Tag: {', '.join(tag_list)}")
+        if tags:
+            prompt_parts.append(f"Accounts to Tag: {', '.join(tags)}")
             
         if request.get('link'):
             prompt_parts.append(f"Important Link to Include: {request['link']}")
